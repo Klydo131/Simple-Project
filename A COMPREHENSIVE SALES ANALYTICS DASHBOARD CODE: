@@ -1,0 +1,203 @@
+A COMPREHENSIVE SALES ANALYTICS DASHBOARD CODE:
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+from ipywidgets import widgets
+from IPython.display import display, clear_output
+# Create sample sales data
+# In a real scenario, you would load data from a CSV or database
+data = {
+'Date': pd.date_range(start='2023-01-01', periods=365, freq='D'),
+'Region': ['North', 'South', 'East', 'West', 'Central'] * 73,
+'Product_Category': ['Electronics', 'Clothing', 'Furniture', 'Groceries', 'Beauty'] * 73,
+'Sales_Amount': [round(100 + abs(i % 15) * 50 + abs((i % 7) * 30), 2) for i in range(365)],
+'Profit_Margin': [round(0.1 + abs(i % 10) * 0.02, 2) for i in range(365)],
+'Customer_Satisfaction': [round(3 + abs(i % 5) * 0.5, 1) for i in range(365)],
+'Sales_Representative': ['John Doe', 'Jane Smith', 'Bob Johnson', 'Alice Brown', 'Charlie
+Wilson'] * 73
+}
+df = pd.DataFrame(data)
+# Extract month and year for temporal analysis
+df['Month'] = df['Date'].dt.month_name()
+df['Year'] = df['Date'].dt.year
+df['Month_Num'] = df['Date'].dt.month # For sorting
+# Create dashboard components
+def create_sales_comparison(df, region=None, product=None, sales_rep=None):
+filtered_df = filter_dataframe(df, region, product, sales_rep)
+# Group by region for comparison
+region_sales = filtered_df.groupby('Region')['Sales_Amount'].sum().reset_index()
+fig = px.bar(
+region_sales,
+x='Region',
+y='Sales_Amount',
+title='Sales Comparison by Region',
+labels={'Sales_Amount': 'Total Sales ($)', 'Region': 'Region'},
+color='Region',
+template='plotly_white'
+)
+fig.update_layout(height=400)
+return fig
+def create_sales_trend(df, region=None, product=None, sales_rep=None):
+filtered_df = filter_dataframe(df, region, product, sales_rep)
+# Group by month for trend analysis
+monthly_sales = filtered_df.groupby(['Year', 'Month_Num',
+'Month'])['Sales_Amount'].sum().reset_index()
+monthly_sales = monthly_sales.sort_values(['Year', 'Month_Num'])
+fig = px.line(
+monthly_sales,
+x='Month',
+y='Sales_Amount',
+title='Monthly Sales Trend',
+labels={'Sales_Amount': 'Total Sales ($)', 'Month': 'Month'},
+markers=True,
+template='plotly_white'
+)
+fig.update_layout(height=400, xaxis_title='Month')
+return fig
+def create_regional_distribution(df, region=None, product=None, sales_rep=None):
+filtered_df = filter_dataframe(df, region, product, sales_rep)
+# Group by product category
+product_sales = filtered_df.groupby('Product_Category')['Sales_Amount'].sum().reset_index()
+fig = px.pie(
+product_sales,
+values='Sales_Amount',
+names='Product_Category',
+title='Sales Distribution by Product Category',
+template='plotly_white',
+hole=0.3
+)
+fig.update_layout(height=400)
+return fig
+def create_performance_heatmap(df, region=None, product=None, sales_rep=None):
+filtered_df = filter_dataframe(df, region, product, sales_rep)
+# Create a pivot table for the heatmap
+pivot_data = filtered_df.pivot_table(
+index='Sales_Representative',
+columns='Product_Category',
+values='Sales_Amount',
+aggfunc='sum'
+)
+fig = go.Figure(data=go.Heatmap(
+z=pivot_data.values,
+x=pivot_data.columns,
+y=pivot_data.index,
+colorscale='Viridis',
+colorbar=dict(title='Sales Amount ($)')
+))
+fig.update_layout(
+title='Sales Performance Heatmap',
+xaxis_title='Product Category',
+yaxis_title='Sales Representative',
+height=400
+)
+return fig
+def create_forecast_projection(df, region=None, product=None, sales_rep=None):
+filtered_df = filter_dataframe(df, region, product, sales_rep)
+# Group by date for time series analysis
+daily_sales = filtered_df.groupby('Date')['Sales_Amount'].sum().reset_index()
+# Simple moving average forecast (in a real scenario, you'd use more advanced models)
+daily_sales['MA7'] = daily_sales['Sales_Amount'].rolling(window=7).mean()
+daily_sales['MA30'] = daily_sales['Sales_Amount'].rolling(window=30).mean()
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+x=daily_sales['Date'],
+y=daily_sales['Sales_Amount'],
+mode='lines',
+name='Actual Sales',
+line=dict(color='blue')
+))
+fig.add_trace(go.Scatter(
+x=daily_sales['Date'],
+y=daily_sales['MA7'],
+mode='lines',
+name='7-Day Moving Average',
+line=dict(color='red')
+))
+fig.add_trace(go.Scatter(
+x=daily_sales['Date'],
+y=daily_sales['MA30'],
+mode='lines',
+name='30-Day Moving Average',
+line=dict(color='green')
+))
+fig.update_layout(
+title='Sales Forecast Projection',
+xaxis_title='Date',
+yaxis_title='Sales Amount ($)',
+height=400,
+template='plotly_white'
+)
+return fig
+def filter_dataframe(df, region=None, product=None, sales_rep=None):
+filtered_df = df.copy()
+if region and region != 'All':
+filtered_df = filtered_df[filtered_df['Region'] == region]
+if product and product != 'All':
+filtered_df = filtered_df[filtered_df['Product_Category'] == product]
+if sales_rep and sales_rep != 'All':
+filtered_df = filtered_df[filtered_df['Sales_Representative'] == sales_rep]
+return filtered_df
+# Create interactive widgets for filtering
+region_dropdown = widgets.Dropdown(
+options=['All'] + list(df['Region'].unique()),
+value='All',
+description='Region:',
+style={'description_width': 'initial'}
+)
+product_dropdown = widgets.Dropdown(
+options=['All'] + list(df['Product_Category'].unique()),
+value='All',
+description='Product:',
+style={'description_width': 'initial'}
+)
+sales_rep_dropdown = widgets.Dropdown(
+options=['All'] + list(df['Sales_Representative'].unique()),
+value='All',
+description='Sales Rep:',
+style={'description_width': 'initial'}
+)
+update_button = widgets.Button(
+description='Update Dashboard',
+button_style='success',
+tooltip='Click to update the dashboard with selected filters'
+)
+output = widgets.Output()
+# Define update function
+def update_dashboard(b):
+with output:
+clear_output()
+# Get current filter values
+region = region_dropdown.value
+product = product_dropdown.value
+sales_rep = sales_rep_dropdown.value
+# Create figures
+fig1 = create_sales_comparison(df, region, product, sales_rep)
+fig2 = create_sales_trend(df, region, product, sales_rep)
+fig3 = create_regional_distribution(df, region, product, sales_rep)
+fig4 = create_performance_heatmap(df, region, product, sales_rep)
+fig5 = create_forecast_projection(df, region, product, sales_rep)
+# Display the figures
+fig1.show()
+fig2.show()
+fig3.show()
+fig4.show()
+fig5.show()
+# Display summary statistics
+filtered_df = filter_dataframe(df, region, product, sales_rep)
+print("\n--- Summary Statistics ---")
+print(f"Total Sales: ${filtered_df['Sales_Amount'].sum():,.2f}")
+print(f"Average Profit Margin: {filtered_df['Profit_Margin'].mean():.2%}")
+print(f"Average Customer Satisfaction:
+{filtered_df['Customer_Satisfaction'].mean():.1f}/5.0")
+# Connect the button to the update function
+update_button.on_click(update_dashboard)
+# Create the dashboard layout
+dashboard_title = widgets.HTML("<h1>Sales Analytics Dashboard</h1>")
+filter_widgets = widgets.HBox([region_dropdown, product_dropdown, sales_rep_dropdown,
+update_button])
+dashboard = widgets.VBox([dashboard_title, filter_widgets, output])
+# Display the dashboard
+display(dashboard)
+# Initialize the dashboard with de
