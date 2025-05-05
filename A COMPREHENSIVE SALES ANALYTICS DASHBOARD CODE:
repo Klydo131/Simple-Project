@@ -200,4 +200,5 @@ update_button])
 dashboard = widgets.VBox([dashboard_title, filter_widgets, output])
 # Display the dashboard
 display(dashboard)
-# Initialize the dashboard with de
+# Initialize the dashboard with default values
+update_dashboard(None)
