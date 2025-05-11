@@ -1,0 +1,132 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+class SimpleCalculator:
+    def __init__(self):
+        """Initialize calculator with empty history."""
+        self.history = []
+        self.result_history = []
+        self.expression_history = []
+        
+    def calculate(self, expression):
+        """Evaluate a mathematical expression and store in history."""
+        try:
+            # Replace some common math terms with their numpy equivalents
+            expression = expression.replace("^", "**")
+            expression = expression.replace("sqrt", "np.sqrt")
+            expression = expression.replace("sin", "np.sin")
+            expression = expression.replace("cos", "np.cos")
+            expression = expression.replace("tan", "np.tan")
+            expression = expression.replace("pi", "np.pi")
+            expression = expression.replace("e", "np.e")
+            
+            # Calculate result
+            result = eval(expression)
+            
+            # Add to history
+            self.history.append((expression, result))
+            self.expression_history.append(expression)
+            self.result_history.append(float(result))
+            
+            return result
+        except Exception as e:
+            print(f"Error: {e}")
+            return None
+    
+    def clear_history(self):
+        """Clear calculation history."""
+        self.history = []
+        self.result_history = []
+        self.expression_history = []
+    
+    def plot_history(self, plot_type='bar'):
+        """Plot calculation history with the specified plot type."""
+        if not self.result_history:
+            print("No calculation history to plot.")
+            return None
+        
+        # Set up the figure
+        plt.figure(figsize=(10, 6))
+        
+        # Set seaborn style
+        sns.set_style("whitegrid")
+        
+        # Create x-axis indices
+        indices = list(range(len(self.result_history)))
+        
+        # Create different plot types based on user selection
+        if plot_type == 'bar':
+            plt.bar(indices, self.result_history, color='skyblue')
+            plt.title('Calculation Results (Bar Chart)')
+            
+        elif plot_type == 'line':
+            plt.plot(indices, self.result_history, 'o-', color='green')
+            plt.title('Calculation Results (Line Chart)')
+            
+        elif plot_type == 'scatter':
+            plt.scatter(indices, self.result_history, color='red', s=100)
+            plt.title('Calculation Results (Scatter Plot)')
+            
+        elif plot_type == 'hist':
+            plt.hist(self.result_history, bins=10, color='purple', alpha=0.7)
+            plt.title('Distribution of Results (Histogram)')
+            return plt  # Return early for histogram as it doesn't use indices
+            
+        # Add labels to all other plot types
+        plt.xlabel('Calculation Index')
+        plt.ylabel('Result')
+        plt.xticks(indices)
+        
+        # Add the expressions as labels if there are not too many
+        if len(self.expression_history) <= 8:
+            plt.xticks(indices, self.expression_history, rotation=45, ha='right')
+        
+        plt.tight_layout()
+        return plt
+
+# Example usage
+def main():
+    # Create calculator
+    calc = SimpleCalculator()
+    
+    # Perform some calculations
+    print("Calculator with Visualization")
+    print("=============================")
+    print("Enter calculations or commands:")
+    print("- Enter a mathematical expression (e.g., '2+2', '5*10', 'sqrt(16)')")
+    print("- Type 'plot' to visualize results")
+    print("- Type 'plot bar', 'plot line', 'plot scatter', or 'plot hist' for different visualizations")
+    print("- Type 'clear' to reset history")
+    print("- Type 'exit' to quit")
+    print()
+    
+    while True:
+        user_input = input("> ")
+        
+        if user_input.lower() == 'exit':
+            break
+            
+        elif user_input.lower() == 'clear':
+            calc.clear_history()
+            print("History cleared")
+            
+        elif user_input.lower().startswith('plot'):
+            parts = user_input.lower().split()
+            plot_type = 'bar'  # default
+            
+            if len(parts) > 1 and parts[1] in ['bar', 'line', 'scatter', 'hist']:
+                plot_type = parts[1]
+                
+            plt = calc.plot_history(plot_type)
+            if plt:
+                plt.show()
+                
+        else:
+            # Treat as calculation
+            result = calc.calculate(user_input)
+            if result is not None:
+                print(f"Result: {result}")
+
+if __name__ == "__main__":
+    main()
