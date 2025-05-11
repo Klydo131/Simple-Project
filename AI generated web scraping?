@@ -1,0 +1,793 @@
+import requests
+from bs4 import BeautifulSoup
+import re
+from urllib.parse import urlparse, urljoin
+import tkinter as tk
+from tkinter import scrolledtext, messagebox, ttk
+import threading
+import sqlite3
+import time
+
+class WebScraperSearchEngine:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Web Scraper Search Engine")
+        self.root.geometry("800x600")
+        self.root.configure(bg="#f0f0f0")
+        
+        # Database setup
+        self.setup_database()
+        
+        # Create UI elements
+        self.create_ui()
+    
+    def setup_database(self):
+        """Set up SQLite database to store scraped data"""
+        self.conn = sqlite3.connect('search_engine.db', check_same_thread=False)
+        self.cursor = self.conn.cursor()
+        
+        # Create table if it doesn't exist
+        self.cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT UNIQUE,
+            title TEXT,
+            content TEXT,
+            timestamp REAL
+        )
+        ''')
+        self.conn.commit()
+    
+    def create_ui(self):
+        """Create the user interface"""
+        # Main frame
+        main_frame = tk.Frame(self.root, bg="#f0f0f0")
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = tk.Label(main_frame, text="Web Scraper Search Engine", 
+                              font=("Helvetica", 18, "bold"), bg="#f0f0f0")
+        title_label.pack(pady=10)
+        
+        # Tab control
+        tab_control = ttk.Notebook(main_frame)
+        
+        # Search tab
+        search_tab = tk.Frame(tab_control, bg="#f0f0f0")
+        tab_control.add(search_tab, text="Search")
+        
+        # Scrape tab
+        scrape_tab = tk.Frame(tab_control, bg="#f0f0f0")
+        tab_control.add(scrape_tab, text="Scrape")
+        
+        tab_control.pack(expand=True, fill=tk.BOTH)
+        
+        # ---- Search Tab ----
+        search_frame = tk.Frame(search_tab, bg="#f0f0f0")
+        search_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Search input
+        search_label = tk.Label(search_frame, text="Search:", font=("Helvetica", 12), bg="#f0f0f0")
+        search_label.pack(anchor=tk.W, pady=(0, 5))
+        
+        search_input_frame = tk.Frame(search_frame, bg="#f0f0f0")
+        search_input_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.search_entry = tk.Entry(search_input_frame, font=("Helvetica", 12))
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        search_button = tk.Button(search_input_frame, text="Search", command=self.search,
+                                 font=("Helvetica", 12), bg="#4CAF50", fg="white")
+        search_button.pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # Search results
+        results_label = tk.Label(search_frame, text="Results:", font=("Helvetica", 12), bg="#f0f0f0")
+        results_label.pack(anchor=tk.W, pady=(10, 5))
+        
+        self.results_text = scrolledtext.ScrolledText(search_frame, wrap=tk.WORD, 
+                                                    font=("Helvetica", 11), height=20)
+        self.results_text.pack(fill=tk.BOTH, expand=True)
+        self.results_text.config(state=tk.DISABLED)
+        
+        # ---- Scrape Tab ----
+        scrape_frame = tk.Frame(scrape_tab, bg="#f0f0f0")
+        scrape_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # URL input
+        url_label = tk.Label(scrape_frame, text="URL to scrape:", font=("Helvetica", 12), bg="#f0f0f0")
+        url_label.pack(anchor=tk.W, pady=(0, 5))
+        
+        url_input_frame = tk.Frame(scrape_frame, bg="#f0f0f0")
+        url_input_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.url_entry = tk.Entry(url_input_frame, font=("Helvetica", 12))
+        self.url_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        scrape_button = tk.Button(url_input_frame, text="Scrape", command=self.start_scraping,
+                                 font=("Helvetica", 12), bg="#2196F3", fg="white")
+        scrape_button.pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # Depth input
+        depth_frame = tk.Frame(scrape_frame, bg="#f0f0f0")
+        depth_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        depth_label = tk.Label(depth_frame, text="Crawl Depth:", font=("Helvetica", 12), bg="#f0f0f0")
+        depth_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        self.depth_var = tk.StringVar(value="1")
+        depth_combobox = ttk.Combobox(depth_frame, textvariable=self.depth_var, 
+                                     values=["1", "2", "3"], width=5)
+        depth_combobox.pack(side=tk.LEFT)
+        
+        # Max pages input
+        max_pages_label = tk.Label(depth_frame, text="Max Pages:", font=("Helvetica", 12), bg="#f0f0f0")
+        max_pages_label.pack(side=tk.LEFT, padx=(20, 10))
+        
+        self.max_pages_var = tk.StringVar(value="10")
+        max_pages_combobox = ttk.Combobox(depth_frame, textvariable=self.max_pages_var, 
+                                         values=["5", "10", "20", "50"], width=5)
+        max_pages_combobox.pack(side=tk.LEFT)
+        
+        # Status
+        status_label = tk.Label(scrape_frame, text="Status:", font=("Helvetica", 12), bg="#f0f0f0")
+        status_label.pack(anchor=tk.W, pady=(10, 5))
+        
+        self.status_text = scrolledtext.ScrolledText(scrape_frame, wrap=tk.WORD,
+                                                   font=("Helvetica", 11), height=15)
+        self.status_text.pack(fill=tk.BOTH, expand=True)
+        self.status_text.config(state=tk.DISABLED)
+        
+        # Database stats
+        stats_frame = tk.Frame(scrape_frame, bg="#f0f0f0")
+        stats_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        refresh_stats_button = tk.Button(stats_frame, text="Refresh Stats", command=self.update_stats,
+                                        font=("Helvetica", 10), bg="#9E9E9E", fg="white")
+        refresh_stats_button.pack(side=tk.LEFT)
+        
+        self.stats_label = tk.Label(stats_frame, text="Pages in database: 0", 
+                                   font=("Helvetica", 10), bg="#f0f0f0")
+        self.stats_label.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Initialize stats
+        self.update_stats()
+    
+    def update_stats(self):
+        """Update database statistics"""
+        try:
+            self.cursor.execute("SELECT COUNT(*) FROM pages")
+            count = self.cursor.fetchone()[0]
+            self.stats_label.config(text=f"Pages in database: {count}")
+        except Exception as e:
+            self.stats_label.config(text=f"Database error: {str(e)}")
+    
+    def start_scraping(self):
+        """Start scraping process in a separate thread"""
+        url = self.url_entry.get().strip()
+        if not url:
+            messagebox.showerror("Error", "Please enter a URL")
+            return
+        
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+            self.url_entry.delete(0, tk.END)
+            self.url_entry.insert(0, url)
+        
+        try:
+            depth = int(self.depth_var.get())
+            max_pages = int(self.max_pages_var.get())
+        except ValueError:
+            messagebox.showerror("Error", "Depth and Max Pages must be integers")
+            return
+        
+        # Clear status
+        self.status_text.config(state=tk.NORMAL)
+        self.status_text.delete(1.0, tk.END)
+        self.status_text.config(state=tk.DISABLED)
+        
+        # Start scraping in a separate thread
+        threading.Thread(target=self.scrape_website, args=(url, depth, max_pages)).start()
+    
+    def scrape_website(self, start_url, max_depth, max_pages):
+        """Scrape website starting from start_url"""
+        self.update_status(f"Starting scraping from {start_url}")
+        
+        visited = set()
+        to_visit = [(start_url, 0)]  # (url, depth)
+        page_count = 0
+        
+        while to_visit and page_count < max_pages:
+            url, depth = to_visit.pop(0)
+            
+            if url in visited or depth > max_depth:
+                continue
+            
+            visited.add(url)
+            
+            try:
+                self.update_status(f"Scraping {url}")
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                response = requests.get(url, headers=headers, timeout=10)
+                
+                if response.status_code != 200:
+                    self.update_status(f"Failed to retrieve {url}: Status code {response.status_code}")
+                    continue
+                
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Extract title
+                title = soup.title.string if soup.title else "No Title"
+                
+                # Extract content (text from paragraphs)
+                paragraphs = soup.find_all('p')
+                content = " ".join([p.get_text() for p in paragraphs])
+                
+                # Save to database
+                self.save_to_db(url, title, content)
+                page_count += 1
+                self.update_status(f"Saved {url} ({page_count}/{max_pages})")
+                
+                # Find links if we're not at max depth
+                if depth < max_depth:
+                    links = soup.find_all('a', href=True)
+                    for link in links:
+                        href = link['href']
+                        absolute_url = urljoin(url, href)
+                        
+                        # Skip non-http links, fragments, and query parameters
+                        parsed = urlparse(absolute_url)
+                        if parsed.scheme not in ('http', 'https'):
+                            continue
+                        
+                        # Try to stay on the same domain
+                        if urlparse(start_url).netloc != parsed.netloc:
+                            continue
+                        
+                        # Remove fragments and queries
+                        clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                        
+                        if clean_url not in visited:
+                            to_visit.append((clean_url, depth + 1))
+                
+                # Small delay to be respectful
+                time.sleep(1)
+                
+            except Exception as e:
+                self.update_status(f"Error scraping {url}: {str(e)}")
+        
+        self.update_status("Scraping completed!")
+        # Update stats in the main thread
+        self.root.after(0, self.update_stats)
+    
+    def save_to_db(self, url, title, content):
+        """Save scraped data to database"""
+        try:
+            timestamp = time.time()
+            self.cursor.execute(
+                "INSERT OR REPLACE INTO pages (url, title, content, timestamp) VALUES (?, ?, ?, ?)",
+                (url, title, content, timestamp)
+            )
+            self.conn.commit()
+        except Exception as e:
+            self.update_status(f"Database error: {str(e)}")
+    
+    def search(self):
+        """Search for the query in the database"""
+        query = self.search_entry.get().strip()
+        if not query:
+            messagebox.showerror("Error", "Please enter a search query")
+            return
+        
+        try:
+            # Clear results
+            self.results_text.config(state=tk.NORMAL)
+            self.results_text.delete(1.0, tk.END)
+            
+            # Search in database
+            search_terms = query.lower().split()
+            results = []
+            
+            for term in search_terms:
+                like_term = f"%{term}%"
+                self.cursor.execute(
+                    "SELECT url, title, content FROM pages WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ?",
+                    (like_term, like_term)
+                )
+                results.extend(self.cursor.fetchall())
+            
+            # Sort results by relevance (frequency of search terms)
+            ranked_results = []
+            seen_urls = set()
+            
+            for url, title, content in results:
+                if url in seen_urls:
+                    continue
+                
+                seen_urls.add(url)
+                rank = 0
+                
+                # Count occurrences of each search term
+                for term in search_terms:
+                    rank += title.lower().count(term.lower()) * 3  # Title matches are weighted higher
+                    rank += content.lower().count(term.lower())
+                
+                if rank > 0:
+                    ranked_results.append((url, title, content, rank))
+            
+            # Sort by rank
+            ranked_results.sort(key=lambda x: x[3], reverse=True)
+            
+            if not ranked_results:
+                self.results_text.insert(tk.END, "No results found.")
+            else:
+                for i, (url, title, content, rank) in enumerate(ranked_results[:10]):  # Show top 10
+                    # Create snippets around search terms
+                    snippet = self.create_snippet(content, search_terms)
+                    
+                    result_text = f"{i+1}. {title}\n"
+                    result_text += f"URL: {url}\n"
+                    result_text += f"{snippet}\n\n"
+                    
+                    self.results_text.insert(tk.END, result_text)
+            
+            self.results_text.config(state=tk.DISABLED)
+            
+        except Exception as e:
+            self.results_text.config(state=tk.NORMAL)
+            self.results_text.delete(1.0, tk.END)
+            self.results_text.insert(tk.END, f"Search error: {str(e)}")
+            self.results_text.config(state=tk.DISABLED)
+    
+    def create_snippet(self, content, search_terms, max_length=200):
+        """Create a snippet of text around the search terms"""
+        content_lower = content.lower()
+        
+        # Find positions of all search terms
+        positions = []
+        for term in search_terms:
+            for match in re.finditer(re.escape(term.lower()), content_lower):
+                positions.append(match.start())
+        
+        if not positions:
+            # If no matches, return the beginning of the content
+            return content[:max_length] + "..."
+        
+        # Find the best position for the snippet
+        best_pos = min(positions)
+        
+        # Create snippet
+        start = max(0, best_pos - max_length // 2)
+        end = min(len(content), start + max_length)
+        
+        snippet = content[start:end]
+        
+        # Add ellipsis if needed
+        if start > 0:
+            snippet = "..." + snippet
+        if end < len(content):
+            snippet = snippet + "..."
+        
+        # Highlight search terms (with simple ** markers)
+        for term in search_terms:
+            pattern = re.compile(re.escape(term), re.IGNORECASE)
+            snippet = pattern.sub(f"**{term}**", snippet)
+        
+        return snippet
+    
+    def update_status(self, message):
+        """Update status text with a new message"""
+        # Use after method to update from a non-main thread
+        self.root.after(0, self._update_status_text, message)
+    
+    def _update_status_text(self, message):
+        """Helper method to update status text from the main thread"""
+        self.status_text.config(state=tk.NORMAL)
+        self.status_text.insert(tk.END, message + "\n")
+        self.status_text.see(tk.END)  # Scroll to bottom
+        self.status_text.config(state=tk.DISABLED)
+
+# Notebook-friendly CLI and GUI handler
+def run_web_scraper_search_engine():
+    # Define CLI functions
+    def cli_scrape(url, depth=1, max_pages=10):
+        """Command-line version of the scraper"""
+        # Create connection to database
+        conn = sqlite3.connect('search_engine.db')
+        cursor = conn.cursor()
+        
+        # Create table if it doesn't exist
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT UNIQUE,
+            title TEXT,
+            content TEXT,
+            timestamp REAL
+        )
+        ''')
+        conn.commit()
+        
+        print(f"Starting scraping from {url}")
+        
+        visited = set()
+        to_visit = [(url, 0)]  # (url, depth)
+        page_count = 0
+        
+        while to_visit and page_count < max_pages:
+            url, current_depth = to_visit.pop(0)
+            
+            if url in visited or current_depth > depth:
+                continue
+            
+            visited.add(url)
+            
+            try:
+                print(f"Scraping {url}")
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                response = requests.get(url, headers=headers, timeout=10)
+                
+                if response.status_code != 200:
+                    print(f"Failed to retrieve {url}: Status code {response.status_code}")
+                    continue
+                
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Extract title
+                title = soup.title.string if soup.title else "No Title"
+                
+                # Extract content (text from paragraphs)
+                paragraphs = soup.find_all('p')
+                content = " ".join([p.get_text() for p in paragraphs])
+                
+                # Save to database
+                timestamp = time.time()
+                cursor.execute(
+                    "INSERT OR REPLACE INTO pages (url, title, content, timestamp) VALUES (?, ?, ?, ?)",
+                    (url, title, content, timestamp)
+                )
+                conn.commit()
+                page_count += 1
+                print(f"Saved {url} ({page_count}/{max_pages})")
+                
+                # Find links if we're not at max depth
+                if current_depth < depth:
+                    links = soup.find_all('a', href=True)
+                    for link in links:
+                        href = link['href']
+                        absolute_url = urljoin(url, href)
+                        
+                        # Skip non-http links, fragments, and query parameters
+                        parsed = urlparse(absolute_url)
+                        if parsed.scheme not in ('http', 'https'):
+                            continue
+                        
+                        # Try to stay on the same domain
+                        if urlparse(url).netloc != parsed.netloc:
+                            continue
+                        
+                        # Remove fragments and queries
+                        clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                        
+                        if clean_url not in visited:
+                            to_visit.append((clean_url, current_depth + 1))
+                
+                time.sleep(1)  # Small delay to be respectful
+                
+            except Exception as e:
+                print(f"Error scraping {url}: {str(e)}")
+        
+        print("Scraping completed!")
+        print(f"Total pages scraped: {page_count}")
+        return f"Scraped {page_count} pages from {url}"
+    
+    def cli_search(query):
+        """Command-line version of the search function"""
+        conn = sqlite3.connect('search_engine.db')
+        cursor = conn.cursor()
+        
+        search_terms = query.lower().split()
+        results = []
+        
+        for term in search_terms:
+            like_term = f"%{term}%"
+            cursor.execute(
+                "SELECT url, title, content FROM pages WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ?",
+                (like_term, like_term)
+            )
+            results.extend(cursor.fetchall())
+        
+        # Sort results by relevance
+        ranked_results = []
+        seen_urls = set()
+        
+        for url, title, content in results:
+            if url in seen_urls:
+                continue
+            
+            seen_urls.add(url)
+            rank = 0
+            
+            # Count occurrences of each search term
+            for term in search_terms:
+                rank += title.lower().count(term.lower()) * 3  # Title matches are weighted higher
+                rank += content.lower().count(term.lower())
+            
+            if rank > 0:
+                ranked_results.append((url, title, content, rank))
+        
+        # Sort by rank
+        ranked_results.sort(key=lambda x: x[3], reverse=True)
+        
+        if not ranked_results:
+            print("No results found.")
+            return "No results found."
+        else:
+            print(f"\nSearch results for '{query}':\n")
+            results_output = []
+            for i, (url, title, content, rank) in enumerate(ranked_results[:10]):
+                # Create a simple snippet
+                content_preview = content[:200] + "..." if len(content) > 200 else content
+                for term in search_terms:
+                    content_preview = re.sub(f"(?i)({re.escape(term)})", r"**\1**", content_preview)
+                
+                print(f"{i+1}. {title}")
+                print(f"   URL: {url}")
+                print(f"   {content_preview}")
+                print()
+                
+                results_output.append(f"{i+1}. {title}\n   URL: {url}\n   {content_preview}\n")
+            
+            return "\n".join(results_output)
+
+    # Try to detect if we're in a notebook environment (like Google Colab)
+    try:
+        # This will only work in IPython/Jupyter environments
+        import IPython
+        is_notebook = True
+    except ImportError:
+        is_notebook = False
+
+    if is_notebook:
+        # We're in a notebook, create interactive widgets
+        try:
+            from IPython.display import display, HTML
+            import ipywidgets as widgets
+            
+            print("Running in notebook mode (GUI unavailable)")
+            
+            # Create a simple notebook UI with tabs
+            tab = widgets.Tab()
+            scrape_tab = widgets.VBox()
+            search_tab = widgets.VBox()
+            
+            tab.children = [scrape_tab, search_tab]
+            tab.set_title(0, 'Scrape')
+            tab.set_title(1, 'Search')
+            
+            # Scrape tab widgets
+            url_input = widgets.Text(description='URL:',
+                                    placeholder='https://example.com',
+                                    layout=widgets.Layout(width='70%'))
+            
+            depth_input = widgets.IntSlider(value=1, min=1, max=3, step=1, 
+                                           description='Depth:',
+                                           layout=widgets.Layout(width='50%'))
+            
+            max_pages_input = widgets.IntSlider(value=10, min=5, max=50, step=5, 
+                                               description='Max pages:',
+                                               layout=widgets.Layout(width='50%'))
+            
+            scrape_output = widgets.Output(layout={'border': '1px solid #ddd', 'padding': '10px', 
+                                                 'max_height': '300px', 'overflow': 'auto'})
+            
+            scrape_button = widgets.Button(description='Scrape Website',
+                                         button_style='primary',
+                                         layout=widgets.Layout(width='auto'))
+            
+            # Search tab widgets  
+            search_input = widgets.Text(description='Search:',
+                                       placeholder='Enter search terms',
+                                       layout=widgets.Layout(width='70%'))
+            
+            search_output = widgets.Output(layout={'border': '1px solid #ddd', 'padding': '10px', 
+                                                 'max_height': '300px', 'overflow': 'auto'})
+            
+            search_button = widgets.Button(description='Search Database',
+                                         button_style='primary',
+                                         layout=widgets.Layout(width='auto'))
+            
+            # Define button actions
+            def on_scrape_button_clicked(b):
+                scrape_output.clear_output()
+                with scrape_output:
+                    url = url_input.value
+                    if not url:
+                        print("Please enter a URL")
+                        return
+                    
+                    if not url.startswith(('http://', 'https://')):
+                        url = 'https://' + url
+                        url_input.value = url
+                    
+                    print(f"Scraping {url} with depth {depth_input.value} and max pages {max_pages_input.value}")
+                    result = cli_scrape(url, depth_input.value, max_pages_input.value)
+            
+            def on_search_button_clicked(b):
+                search_output.clear_output()
+                with search_output:
+                    query = search_input.value
+                    if not query:
+                        print("Please enter search terms")
+                        return
+                    
+                    print(f"Searching for: {query}")
+                    result = cli_search(query)
+            
+            scrape_button.on_click(on_scrape_button_clicked)
+            search_button.on_click(on_search_button_clicked)
+            
+            # Assemble the tabs
+            scrape_tab.children = [
+                widgets.HTML("<h3>Web Scraper</h3>"),
+                url_input, 
+                widgets.HBox([depth_input, max_pages_input]),
+                scrape_button,
+                scrape_output
+            ]
+            
+            search_tab.children = [
+                widgets.HTML("<h3>Search Engine</h3>"),
+                search_input,
+                search_button,
+                search_output
+            ]
+            
+            display(tab)
+            
+            # Add some styling
+            display(HTML("""
+            <style>
+                .widget-text input[type="text"] {
+                    font-size: 14px;
+                    padding: 5px;
+                }
+                .widget-button button {
+                    font-size: 14px;
+                    padding: 5px 15px;
+                }
+            </style>
+            """))
+            
+            print("Database initialized. You can now use the tabs above to scrape websites and search the database.")
+            
+        except ImportError:
+            # IPython available but widgets are not - use basic CLI in notebook
+            print("Running in simple CLI mode (ipywidgets not available)")
+            
+            def run_cli():
+                import sys
+                print("Web Scraper and Search Engine CLI")
+                print("================================")
+                print("1. Scrape Website")
+                print("2. Search Database")
+                print("3. Exit")
+                
+                choice = input("Enter your choice (1-3): ")
+                
+                if choice == '1':
+                    url = input("Enter URL to scrape: ")
+                    depth = input("Enter crawl depth (1-3, default 1): ")
+                    max_pages = input("Enter max pages (default 10): ")
+                    
+                    try:
+                        depth = int(depth) if depth else 1
+                        max_pages = int(max_pages) if max_pages else 10
+                    except ValueError:
+                        print("Invalid input. Using defaults.")
+                        depth = 1
+                        max_pages = 10
+                    
+                    cli_scrape(url, depth, max_pages)
+                
+                elif choice == '2':
+                    query = input("Enter search terms: ")
+                    cli_search(query)
+                
+                elif choice == '3':
+                    print("Exiting.")
+                    return
+                
+                else:
+                    print("Invalid choice")
+                
+                # Keep running until exit
+                run_cli()
+            
+            run_cli()
+    
+    else:
+        # Not in a notebook, try GUI first, with CLI fallback
+        try:
+            root = tk.Tk()
+            app = WebScraperSearchEngine(root)
+            root.mainloop()
+        except tk.TclError as e:
+            print("Error: Cannot initialize the Tkinter GUI.")
+            print("This may be because:")
+            print(" - You're running in a headless environment (no display)")
+            print(" - There's an issue with your Tkinter installation")
+            print(f"Error details: {e}")
+            print("\nFalling back to CLI mode:\n")
+            
+            # Command-line interface fallback
+            import argparse
+            import sys
+            
+            # Check if any command line arguments were provided
+            if len(sys.argv) > 1:
+                # Parse command line arguments
+                parser = argparse.ArgumentParser(description='Web Scraper and Search Engine (CLI Version)')
+                subparsers = parser.add_subparsers(dest='command', help='Command to run')
+                
+                # Scrape command
+                scrape_parser = subparsers.add_parser('scrape', help='Scrape websites')
+                scrape_parser.add_argument('url', help='URL to start scraping from')
+                scrape_parser.add_argument('--depth', type=int, default=1, help='Crawl depth (default: 1)')
+                scrape_parser.add_argument('--max-pages', type=int, default=10, help='Maximum pages to scrape (default: 10)')
+                
+                # Search command
+                search_parser = subparsers.add_parser('search', help='Search for terms in scraped content')
+                search_parser.add_argument('query', help='Search query')
+                
+                args = parser.parse_args()
+                
+                if args.command == 'scrape':
+                    cli_scrape(args.url, args.depth, args.max_pages)
+                elif args.command == 'search':
+                    cli_search(args.query)
+                else:
+                    parser.print_help()
+            else:
+                # Interactive CLI menu
+                print("Web Scraper and Search Engine CLI")
+                print("================================")
+                
+                while True:
+                    print("\n1. Scrape Website")
+                    print("2. Search Database")
+                    print("3. Exit")
+                    
+                    choice = input("\nEnter your choice (1-3): ")
+                    
+                    if choice == '1':
+                        url = input("Enter URL to scrape: ")
+                        depth = input("Enter crawl depth (1-3, default 1): ")
+                        max_pages = input("Enter max pages (default 10): ")
+                        
+                        try:
+                            depth = int(depth) if depth else 1
+                            max_pages = int(max_pages) if max_pages else 10
+                        except ValueError:
+                            print("Invalid input. Using defaults.")
+                            depth = 1
+                            max_pages = 10
+                        
+                        cli_scrape(url, depth, max_pages)
+                    
+                    elif choice == '2':
+                        query = input("Enter search terms: ")
+                        cli_search(query)
+                    
+                    elif choice == '3':
+                        print("Exiting.")
+                        break
+                    
+                    else:
+                        print("Invalid choice")
+
+if __name__ == "__main__":
+    run_web_scraper_search_engine()
