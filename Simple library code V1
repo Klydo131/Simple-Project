@@ -1,0 +1,580 @@
+import random
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+import os
+from google.colab import files
+import io
+
+class Book:
+    def __init__(self, book_id, title, author, genre, price):
+        self.book_id = book_id
+        self.title = title
+        self.author = author
+        self.genre = genre
+        self.price = price
+        self.available = True
+        
+    def __str__(self):
+        status = "Available" if self.available else "Not Available"
+        return f"ID: {self.book_id} | {self.title} by {self.author} | {self.genre} | ${self.price} | {status}"
+
+class Library:
+    def __init__(self):
+        # Initialize library with empty collections
+        self.books = {}
+        self.rentals = []
+        self.purchases = []
+        self.transaction_history = []
+        
+        # Create directories for data and visualizations in Colab
+        self.data_path = "/content/library_data.csv"
+        self.viz_dir = "/content/visualizations"
+        
+        if not os.path.exists(self.viz_dir):
+            os.makedirs(self.viz_dir)
+        
+        # Load sample data if not already available
+        if not os.path.exists(self.data_path):
+            self.generate_sample_books()
+        else:
+            self.load_books()
+    
+    def generate_sample_books(self):
+        """Generate 100 random books for the library"""
+        # List of sample titles, authors, and genres
+        sample_titles = [
+            "The Great Adventure", "Mystery of the Lost Key", "Whispers in the Dark",
+            "Journey to the Stars", "The Secret Garden", "The Hidden Truth",
+            "Echoes of Time", "The Last Knight", "Shadows of the Past",
+            "The Silent Witness", "Beyond the Horizon", "The Forgotten Path",
+            "Legends of the Ancient World", "The Emerald City", "Dreams of Tomorrow",
+            "The Crystal Cave", "Rivers of Gold", "The Midnight Hour",
+            "Kingdoms of Sand", "The Invisible Thread", "Beneath the Surface"
+        ]
+        
+        sample_authors = [
+            "J.K. Smith", "Emily Johnson", "Michael Brown", "Sarah Davis",
+            "Robert Wilson", "Lisa Anderson", "David Miller", "Jennifer Taylor",
+            "Thomas Moore", "Michelle White", "James Martin", "Patricia Clark",
+            "Daniel Lewis", "Elizabeth Hall", "Richard Young", "Susan Allen"
+        ]
+        
+        sample_genres = [
+            "Fiction", "Fantasy", "Mystery", "Science Fiction", "Romance",
+            "Thriller", "Horror", "Biography", "History", "Self-Help",
+            "Philosophy", "Science", "Drama", "Adventure", "Poetry"
+        ]
+        
+        # Generate 100 unique books
+        for i in range(1, 101):
+            title = f"{random.choice(sample_titles)} {i}"
+            author = random.choice(sample_authors)
+            genre = random.choice(sample_genres)
+            price = round(random.uniform(9.99, 49.99), 2)
+            
+            book = Book(i, title, author, genre, price)
+            self.books[i] = book
+        
+        # Save the books to a CSV file
+        self.save_books()
+        
+    def save_books(self):
+        """Save book data to CSV"""
+        data = []
+        for book_id, book in self.books.items():
+            data.append({
+                'book_id': book.book_id,
+                'title': book.title,
+                'author': book.author,
+                'genre': book.genre,
+                'price': book.price,
+                'available': book.available
+            })
+        
+        df = pd.DataFrame(data)
+        df.to_csv(self.data_path, index=False)
+        
+    def load_books(self):
+        """Load books from CSV file"""
+        try:
+            df = pd.read_csv(self.data_path)
+            for _, row in df.iterrows():
+                book = Book(
+                    int(row['book_id']),  # Ensure book_id is integer
+                    row['title'],
+                    row['author'],
+                    row['genre'],
+                    float(row['price'])  # Ensure price is float
+                )
+                book.available = bool(row['available'])  # Ensure available is boolean
+                self.books[int(row['book_id'])] = book
+        except Exception as e:
+            print(f"Error loading books: {e}")
+            print("Generating new sample books...")
+            self.generate_sample_books()
+    
+    def display_books(self, filter_available=False, return_df=False):
+        """Display all books or only available books"""
+        data = []
+        for book in self.books.values():
+            if not filter_available or (filter_available and book.available):
+                data.append({
+                    'ID': book.book_id,
+                    'Title': book.title,
+                    'Author': book.author,
+                    'Genre': book.genre,
+                    'Price': f"${book.price}",
+                    'Status': "Available" if book.available else "Not Available"
+                })
+        
+        if return_df:
+            return pd.DataFrame(data)
+        else:
+            if data:
+                print("\n=== LIBRARY BOOK COLLECTION ===")
+                df = pd.DataFrame(data)
+                # Display in a more readable format
+                with pd.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', 1000):
+                    print(df.to_string(index=False))
+            else:
+                print("No books available.")
+    
+    def rent_book(self, book_id, customer_name):
+        """Rent a book to a customer"""
+        try:
+            book_id = int(book_id)  # Ensure book_id is integer
+            
+            if book_id not in self.books:
+                print(f"Error: Book with ID {book_id} does not exist.")
+                return False
+            
+            book = self.books[book_id]
+            if not book.available:
+                print(f"Error: '{book.title}' is not available for rent.")
+                return False
+            
+            # Set book as unavailable
+            book.available = False
+            
+            # Record rental
+            rental_date = datetime.now()
+            rental = {
+                'book_id': book_id,
+                'title': book.title,
+                'customer': customer_name,
+                'date': rental_date,
+                'type': 'rent',
+                'price': round(book.price * 0.2, 2)  # Rental fee is 20% of book price
+            }
+            
+            self.rentals.append(rental)
+            self.transaction_history.append(rental)
+            self.save_books()
+            
+            print(f"Book '{book.title}' has been rented to {customer_name}.")
+            print(f"Rental fee: ${rental['price']}")
+            return True
+        except ValueError:
+            print("Error: Book ID must be a number.")
+            return False
+    
+    def buy_book(self, book_id, customer_name):
+        """Sell a book to a customer"""
+        try:
+            book_id = int(book_id)  # Ensure book_id is integer
+            
+            if book_id not in self.books:
+                print(f"Error: Book with ID {book_id} does not exist.")
+                return False
+            
+            book = self.books[book_id]
+            if not book.available:
+                print(f"Error: '{book.title}' is not available for purchase.")
+                return False
+            
+            # Set book as unavailable
+            book.available = False
+            
+            # Record purchase
+            purchase_date = datetime.now()
+            purchase = {
+                'book_id': book_id,
+                'title': book.title,
+                'customer': customer_name,
+                'date': purchase_date,
+                'type': 'purchase',
+                'price': book.price
+            }
+            
+            self.purchases.append(purchase)
+            self.transaction_history.append(purchase)
+            self.save_books()
+            
+            print(f"Book '{book.title}' has been purchased by {customer_name}.")
+            print(f"Purchase price: ${book.price}")
+            return True
+        except ValueError:
+            print("Error: Book ID must be a number.")
+            return False
+    
+    def return_book(self, book_id):
+        """Return a previously rented book"""
+        try:
+            book_id = int(book_id)  # Ensure book_id is integer
+            
+            if book_id not in self.books:
+                print(f"Error: Book with ID {book_id} does not exist.")
+                return False
+            
+            book = self.books[book_id]
+            if book.available:
+                print(f"Error: '{book.title}' is already available in the library.")
+                return False
+            
+            # Set book as available
+            book.available = True
+            self.save_books()
+            
+            print(f"Book '{book.title}' has been returned to the library.")
+            return True
+        except ValueError:
+            print("Error: Book ID must be a number.")
+            return False
+    
+    def add_new_book(self, title, author, genre, price):
+        """Add a new book to the library"""
+        try:
+            # Validate inputs
+            if not title or not author or not genre:
+                print("Error: Title, author, and genre cannot be empty.")
+                return False
+            
+            price = float(price)  # Ensure price is float
+            if price <= 0:
+                print("Error: Price must be greater than zero.")
+                return False
+            
+            # Get new book ID
+            new_id = max(self.books.keys()) + 1 if self.books else 1
+            
+            # Create new book
+            new_book = Book(new_id, title, author, genre, price)
+            self.books[new_id] = new_book
+            self.save_books()
+            
+            print(f"New book added: {new_book}")
+            return new_id
+        except ValueError:
+            print("Error: Price must be a number.")
+            return False
+    
+    def search_books(self, search_term):
+        """Search for books by title, author, or genre"""
+        search_term = search_term.lower()
+        results = []
+        
+        for book in self.books.values():
+            if (search_term in book.title.lower() or 
+                search_term in book.author.lower() or 
+                search_term in book.genre.lower()):
+                results.append(book)
+        
+        if results:
+            print(f"\n=== SEARCH RESULTS FOR '{search_term}' ===")
+            for book in results:
+                print(book)
+        else:
+            print(f"No books found matching '{search_term}'.")
+        
+        return results
+    
+    def visualize_library_stats(self):
+        """Generate visualizations for library statistics"""
+        # Create a DataFrame for analysis
+        data = []
+        for book in self.books.values():
+            data.append({
+                'genre': book.genre,
+                'price': book.price,
+                'available': book.available,
+                'author': book.author
+            })
+        
+        df = pd.DataFrame(data)
+        
+        # Set up the style
+        sns.set(style="whitegrid")
+        plt.figure(figsize=(15, 10))
+        
+        # Create subplot layout
+        plt.subplot(2, 2, 1)
+        
+        # 1. Visualization: Books by Genre
+        genre_counts = df['genre'].value_counts().head(10)  # Top 10 genres
+        ax = sns.barplot(x=genre_counts.index, y=genre_counts.values, palette="viridis")
+        plt.title('Top 10 Genres in Library', fontsize=14)
+        plt.xlabel('Genre', fontsize=12)
+        plt.ylabel('Number of Books', fontsize=12)
+        plt.xticks(rotation=45, ha='right')
+        # Add count labels on bars
+        for i, count in enumerate(genre_counts.values):
+            ax.text(i, count + 0.1, str(count), ha='center', fontsize=10)
+        
+        # 2. Visualization: Available vs. Unavailable Books
+        plt.subplot(2, 2, 2)
+        availability_counts = df['available'].value_counts()
+        labels = ['Available', 'Not Available']
+        colors = ['#66b3ff', '#ff9999']
+        plt.pie(availability_counts, labels=labels, autopct='%1.1f%%', colors=colors, startangle=90)
+        plt.title('Book Availability Status', fontsize=14)
+        plt.axis('equal')
+        
+        # 3. Visualization: Price Distribution
+        plt.subplot(2, 2, 3)
+        sns.histplot(df['price'], bins=15, kde=True, color='skyblue')
+        plt.title('Price Distribution of Books', fontsize=14)
+        plt.xlabel('Price ($)', fontsize=12)
+        plt.ylabel('Count', fontsize=12)
+        
+        # 4. Visualization: Top Authors
+        plt.subplot(2, 2, 4)
+        author_counts = df['author'].value_counts().head(10)  # Top 10 authors
+        ax = sns.barplot(x=author_counts.values, y=author_counts.index, palette="rocket")
+        plt.title('Top 10 Authors by Number of Books', fontsize=14)
+        plt.xlabel('Number of Books', fontsize=12)
+        plt.ylabel('Author', fontsize=12)
+        # Add count labels on bars
+        for i, count in enumerate(author_counts.values):
+            ax.text(count + 0.1, i, str(count), va='center', fontsize=10)
+        
+        plt.tight_layout()
+        
+        # Save the visualization
+        viz_path = f"{self.viz_dir}/library_stats.png"
+        plt.savefig(viz_path)
+        
+        # Display the visualization
+        plt.show()
+        
+        # If transaction history exists, create additional visualizations
+        if self.transaction_history:
+            self.visualize_transactions()
+        
+        print(f"Visualizations have been generated and displayed.")
+    
+    def visualize_transactions(self):
+        """Generate visualizations for transaction history"""
+        if not self.transaction_history:
+            print("No transaction history available for visualization.")
+            return
+        
+        # Create DataFrame from transaction history
+        transaction_df = pd.DataFrame(self.transaction_history)
+        transaction_df['date'] = pd.to_datetime(transaction_df['date'])
+        transaction_df['month'] = transaction_df['date'].dt.strftime('%Y-%m')
+        
+        plt.figure(figsize=(15, 10))
+        
+        # 1. Transaction Types
+        plt.subplot(2, 2, 1)
+        transaction_types = transaction_df['type'].value_counts()
+        colors = ['#66b3ff', '#ff9999']
+        plt.pie(transaction_types, labels=transaction_types.index, autopct='%1.1f%%', colors=colors, startangle=90)
+        plt.title('Transaction Types', fontsize=14)
+        plt.axis('equal')
+        
+        # 2. Monthly Transactions
+        plt.subplot(2, 2, 2)
+        # Group by month and transaction type
+        monthly_transactions = transaction_df.groupby(['month', 'type']).size().unstack(fill_value=0)
+        monthly_transactions.plot(kind='bar', ax=plt.gca())
+        plt.title('Monthly Transactions', fontsize=14)
+        plt.xlabel('Month', fontsize=12)
+        plt.ylabel('Count', fontsize=12)
+        plt.legend(title='Transaction Type')
+        plt.xticks(rotation=45)
+        
+        # 3. Revenue by Transaction Type
+        plt.subplot(2, 2, 3)
+        revenue_by_type = transaction_df.groupby('type')['price'].sum()
+        ax = sns.barplot(x=revenue_by_type.index, y=revenue_by_type.values, palette="viridis")
+        plt.title('Revenue by Transaction Type', fontsize=14)
+        plt.xlabel('Transaction Type', fontsize=12)
+        plt.ylabel('Revenue ($)', fontsize=12)
+        # Add revenue labels on bars
+        for i, revenue in enumerate(revenue_by_type.values):
+            ax.text(i, revenue + 0.1, f"${revenue:.2f}", ha='center', fontsize=10)
+        
+        # 4. Monthly Revenue
+        plt.subplot(2, 2, 4)
+        revenue_df = transaction_df.groupby(['month', 'type'])['price'].sum().unstack(fill_value=0)
+        revenue_df.plot(kind='bar', ax=plt.gca())
+        plt.title('Monthly Revenue', fontsize=14)
+        plt.xlabel('Month', fontsize=12)
+        plt.ylabel('Revenue ($)', fontsize=12)
+        plt.legend(title='Transaction Type')
+        plt.xticks(rotation=45)
+        
+        plt.tight_layout()
+        
+        # Save the visualization
+        viz_path = f"{self.viz_dir}/transaction_stats.png"
+        plt.savefig(viz_path)
+        
+        # Display the visualization
+        plt.show()
+
+# Utility functions for Google Colab interface
+def display_menu():
+    """Display the main menu"""
+    print("\n" + "="*40)
+    print("    LIBRARY MANAGEMENT SYSTEM")
+    print("="*40)
+    print("1. Display All Books")
+    print("2. Display Available Books")
+    print("3. Search Books")
+    print("4. Rent a Book")
+    print("5. Buy a Book")
+    print("6. Return a Book")
+    print("7. Add a New Book")
+    print("8. Visualize Library Statistics")
+    print("9. Export Library Data")
+    print("0. Exit")
+    print("="*40)
+
+def export_library_data(library):
+    """Export library data as CSV for download in Colab"""
+    try:
+        # Create a DataFrame for all books
+        data = []
+        for book in library.books.values():
+            data.append({
+                'Book ID': book.book_id,
+                'Title': book.title,
+                'Author': book.author,
+                'Genre': book.genre,
+                'Price': book.price,
+                'Available': "Yes" if book.available else "No"
+            })
+        
+        df = pd.DataFrame(data)
+        
+        # Create a BytesIO object
+        csv_data = io.BytesIO()
+        df.to_csv(csv_data, index=False)
+        csv_data.seek(0)
+        
+        # Create a download link
+        files.download('library_export.csv')
+        print("Library data exported successfully. Download should start automatically.")
+    except Exception as e:
+        print(f"Error exporting data: {e}")
+
+def main():
+    # Print welcome message
+    print("\n" + "*"*50)
+    print("*" + " "*48 + "*")
+    print("*  WELCOME TO THE LIBRARY MANAGEMENT SYSTEM  *")
+    print("*" + " "*48 + "*")
+    print("*"*50)
+    print("\nInitializing library data...")
+    
+    # Initialize the library
+    library = Library()
+    print("Library initialized with 100 books!")
+    
+    while True:
+        display_menu()
+        
+        try:
+            choice = input("\nEnter your choice (0-9): ")
+            
+            if choice == '1':
+                # Display all books
+                library.display_books(filter_available=False)
+            
+            elif choice == '2':
+                # Display available books
+                library.display_books(filter_available=True)
+            
+            elif choice == '3':
+                # Search books
+                search_term = input("Enter search term (title, author, or genre): ")
+                library.search_books(search_term)
+            
+            elif choice == '4':
+                # Rent a book
+                book_id = input("Enter the Book ID to rent: ")
+                customer_name = input("Enter customer name: ")
+                if not customer_name:
+                    print("Error: Customer name cannot be empty.")
+                else:
+                    library.rent_book(book_id, customer_name)
+            
+            elif choice == '5':
+                # Buy a book
+                book_id = input("Enter the Book ID to buy: ")
+                customer_name = input("Enter customer name: ")
+                if not customer_name:
+                    print("Error: Customer name cannot be empty.")
+                else:
+                    library.buy_book(book_id, customer_name)
+            
+            elif choice == '6':
+                # Return a book
+                book_id = input("Enter the Book ID to return: ")
+                library.return_book(book_id)
+            
+            elif choice == '7':
+                # Add a new book
+                title = input("Enter book title: ")
+                author = input("Enter author name: ")
+                genre = input("Enter genre: ")
+                price = input("Enter price: $")
+                library.add_new_book(title, author, genre, price)
+            
+            elif choice == '8':
+                # Visualize library statistics
+                print("\nGenerating library statistics visualizations...")
+                library.visualize_library_stats()
+            
+            elif choice == '9':
+                # Export library data
+                export_library_data(library)
+            
+            elif choice == '0':
+                # Exit
+                print("\nThank you for using the Library Management System!")
+                print("Goodbye!")
+                break
+            
+            else:
+                print("Invalid choice. Please try again.")
+        
+        except KeyboardInterrupt:
+            print("\n\nOperation cancelled by user.")
+        except Exception as e:
+            print(f"\nAn error occurred: {e}")
+            print("Please try again.")
+
+# Check if running in Google Colab
+def is_running_in_colab():
+    try:
+        import google.colab
+        return True
+    except:
+        return False
+
+if __name__ == "__main__":
+    if is_running_in_colab():
+        print("Running in Google Colab environment")
+        main()
+    else:
+        print("This script is optimized for Google Colab.")
+        response = input("Do you want to continue anyway? (y/n): ")
+        if response.lower() == 'y':
+            main()
+        else:
+            print("Exiting program.")
